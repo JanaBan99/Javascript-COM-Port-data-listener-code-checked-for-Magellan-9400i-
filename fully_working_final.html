@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Serial Port WebApp</title>
+</head>
+<body>
+    <h1>Serial Port WebApp</h1>
+    <button id="connectButton">Connect to Serial</button>
+    <div>
+        <p id="status">Disconnected</p>
+        <ul id="outputList"></ul>
+    </div>
+
+    <script>
+        const receivedDataList = [];
+        let lastDisplayedScaleValue = null;
+        let port = null;
+        let writer = null;
+        let reader = null;
+        let sendHostCommand = false;
+		const usbVendorId = 0x1A86; // Change to your device's Vendor ID
+        const usbProductId = 0x7523; // Change to your device's Product ID
+		
+        async function connectSerial() {
+            try {
+                const ports = await navigator.serial.getPorts();
+
+				if (!ports.length) {
+                    port = await navigator.serial.requestPort({
+                        filters: [{ usbVendorId, usbProductId }]
+                    });
+                } else {
+                    port = ports[0];
+                }
+				
+                const statusElement = document.getElementById('status');
+                statusElement.textContent = 'Connected';
+
+                await port.open({
+                    baudRate: 9600,
+                    dataBits: 7,
+                    stopBits: 1,
+                    parity: "odd",
+                });
+
+                writer = port.writable.getWriter();
+                reader = port.readable.getReader();
+
+                readData();
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        function handleDisconnect() {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = 'Disconnected';
+        }
+
+        async function readData() {
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        handleDisconnect();
+                        break;
+                    }
+                    const response = new TextDecoder().decode(value);
+                    console.log(response);
+
+                    // Use regular expressions to match data formats
+                    const barcodeMatch = /^S08/;
+                    const scaleMatch = /^S144/;
+                    const ignoreMatch = /^S14[13]/;
+
+                    if (barcodeMatch.test(response)) {
+                        receivedDataList.push(`Barcode: ${response}`);
+                        displayReceivedData();
+                        sendHostCommand = true; 
+                    } else if (scaleMatch.test(response)) {
+                        const scaleValue = response;
+                        receivedDataList.push(`Scale: ${scaleValue}`);
+                        lastDisplayedScaleValue = scaleValue;
+                        displayReceivedData();
+                        sendHostCommand = false; // Stop sending the host command
+                    //} //else if (!ignoreMatch.test(response)) {
+                        //receivedDataList.push(`Other Data: ${response}`);
+                        //displayReceivedData();
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                handleDisconnect();
+            }
+        }
+
+        async function sendHostCommandIfNeeded() {
+            if (sendHostCommand && writer) {
+                const command = "S14\x0d\r\n";
+                const encoder = new TextEncoder();
+                const commandArrayBuffer = encoder.encode(command);
+                await writer.write(commandArrayBuffer);
+            }
+        }
+
+        function displayReceivedData() {
+            const outputList = document.getElementById('outputList');
+            outputList.innerHTML = '';
+            receivedDataList.forEach(data => {
+                const listItem = document.createElement('li');
+                listItem.textContent = data;
+                outputList.appendChild(listItem);
+            });
+        }
+
+        document.getElementById('connectButton').addEventListener('click', connectSerial);
+        setInterval(sendHostCommandIfNeeded, 1000); 
+    </script>
+</body>
+</html>
