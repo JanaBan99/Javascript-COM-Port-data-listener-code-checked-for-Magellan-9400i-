@@ -6,3 +6,7 @@ baudRate: 9600,
 dataBits: 7,
 stopBits: 1,
 parity: "odd",
+
+The image will provide example on how I read the data.
+
+the fully_working_final.html contains method to autoconnect to the device. But the Product_ID and the Vendor_ID should be known beforehand.
